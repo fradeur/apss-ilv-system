@@ -10,7 +10,7 @@ import json
 # SYSTEM CONFIGURATION
 # ==========================================
 # INSERT YOUR API KEY HERE
-client = genai.Client(api_key="AQ."GEMINI_API_KEY")
+client = genai.Client(api_key="GEMINI_API_KEY")
 st.set_page_config(page_title="APSS - ILV System", page_icon="📦", layout="wide")
 
 
