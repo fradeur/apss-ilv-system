@@ -33,7 +33,7 @@ def perform_audit(doc_files, prod_files):
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
     response = client.models.generate_content(
-        model='models/gemini-3-pro-image',
+        model='models/gemini-2.5-flash',
         contents=contents,
         config=types.GenerateContentConfig(temperature=0.0)
     )
