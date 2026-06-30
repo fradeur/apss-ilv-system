@@ -16,17 +16,18 @@ st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 # AI ENGINE: STRUCTURED AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
-    # Prompt yêu cầu AI trả về cấu trúc JSON rõ ràng, cấm đoán mò và có barem chấm điểm
+    # Prompt sử dụng Penalty System để chấm điểm linh hoạt (0 - 100)
     prompt = """
     Perform an expert logistics audit. 
     CRITICAL RULE: Focus ONLY on validating the Item Identity (Part Number/Description) and Quantity. 
     DO NOT extract, guess, or evaluate Weight or Dimensions under any circumstances.
     
-    SCORING RUBRIC for 'consistency_score':
-    - 100: Perfect match in both Item Identity and Quantity. No extra undeclared items.
-    - 50 to 99: Partial match (e.g., Item Identity matches, but Quantity is incorrect, or there are extra undeclared items alongside the correct ones).
-    - 1 to 49: Severe discrepancy, but some parts match.
-    - 0: Critical mismatch (completely wrong item, nothing matches the documentation).
+    CONTINUOUS SCORING GUIDELINES (Calculate a precise score from 0 to 100):
+    - Start with a baseline score of 100.
+    - Deduct 1 to 10 points for minor discrepancies (e.g., slight differences in description wording but the part number matches).
+    - Deduct 15 to 30 points for the presence of undeclared extra components (depending on the volume of extra items).
+    - Deduct 40 to 70 points for quantity mismatches (scale the deduction proportionally to how large the mismatch is).
+    - Set the score strictly to 0 ONLY if the primary part number/item is completely wrong or missing.
     
     Return JSON strictly in this format:
     {
@@ -52,7 +53,7 @@ def perform_audit(doc_files, prod_files):
     for f in prod_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
-    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính chính xác
+    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính nhất quán cao nhất
     response = client.models.generate_content(
         model='models/gemini-2.5-flash',
         contents=contents,
@@ -85,7 +86,7 @@ if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
                 st.progress(res['consistency_score'] / 100)
                 st.info(res['summary'])
 
-                # 2. AI CONTEXT ANALYSIS (Phần mô tả Context)
+                # 2. AI CONTEXT ANALYSIS
                 st.markdown("### 📝 AI Context Analysis")
                 colA, colB = st.columns(2)
                 with colA:
@@ -95,7 +96,7 @@ if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
                     st.markdown("**📦 Physical Observation**")
                     st.write(res.get('physical_description', 'No physical description provided.'))
 
-                # 3. VERIFICATION TABLE (Chỉ hiển thị Identity và Quantity)
+                # 3. VERIFICATION TABLE
                 st.markdown("### 📊 Verification Details")
                 st.table(res['comparison'])
 
