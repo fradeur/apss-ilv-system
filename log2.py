@@ -6,114 +6,103 @@ import json
 # ==========================================
 # SYSTEM CONFIGURATION
 # ==========================================
-# Lấy API Key từ hệ thống Secrets của Streamlit
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
 st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 
 # ==========================================
-# AI ENGINE: STRUCTURED AUDIT
+# AI ENGINE: 8-STEP STRICTOR AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
-    # Prompt áp dụng Cơ chế Trọng số (40-40-20) với Độ mịn cao (High Granularity)
     prompt = """
-    Perform an expert logistics audit. 
-    CRITICAL RULE: Focus ONLY on validating the Item Identity (Part Number/Description) and Quantity. 
-    DO NOT extract, guess, or evaluate Weight or Dimensions under any circumstances.
+    Perform an expert industrial logistics audit using an 8-step verification process.
     
-    WEIGHTED SCORING SYSTEM (Total: 100 points - Calculate with high granularity, allowing exact odd/decimal-like integer scores such as 27, 34, 42, etc.):
-    1. Item Identity (Max 40 pts): Award 40 pts for a perfect match. Deduct partial points if the name is slightly off but part number is correct. Award 0 only if completely wrong.
-    2. Quantity (Max 40 pts): Award 40 pts for a perfect match. Calculate a precise mathematical penalty based on the deviation ratio (e.g., if actual is 5x the declared, do not just give 0, calculate a granular partial score reflecting the severe ratio).
-    3. Extras & Labeling (Max 20 pts): Award 20 pts for perfect status. Deduct exact points dynamically depending on the severity and number of misleading labels found.
-    
-    CRITICAL: Do not round the final score to the nearest 5 or 10. Compute a precise, custom integer score based on the exact evaluation.
+    1. Item Identity & Integrity (50 pts):
+       - Part Number Check (15 pts): Verify exact part code matches.
+       - Authenticity/Quality (15 pts): Check if item appears New/Original.
+       - Visual Fidelity (20 pts): Match shape, finish, and specs.
+       - KNOCK-OUT: Incorrect Part Number = 0% total score immediately.
+
+    2. Quantity Verification (40 pts):
+       - Outer Manifest/Pallet Count (20 pts): Verify shipping containers.
+       - Inner Unit Count (20 pts): Verify actual items per box.
+       - PENALTY: Apply heavy exponential penalty for any deviation in either category.
+
+    3. Extras & Labeling (10 pts):
+       - Label Integrity (5 pts): Check for cross-labeling or misleading tags.
+       - Unmanifested Items (3 pts): Detect extra/foreign parts.
+       - Label Clarity (2 pts): Ensure readability.
+
+    Calculate points for each sub-category above.
     
     Return JSON strictly in this format:
     {
-        "summary": "One sentence overall summary of the audit result.",
-        "doc_description": "A brief summary of what the documents declare (Item and Quantity).",
-        "physical_description": "A brief summary of what is visible in the physical product images (Item and Quantity).",
-        "comparison": [
-            {"Aspect": "Item Identity", "Doc": "...", "Physical": "..."}, 
-            {"Aspect": "Quantity", "Doc": "...", "Physical": "..."}
-        ],
+        "summary": "Professional summary of the shipment audit.",
+        "doc_description": "Declared details in documents.",
+        "physical_description": "Observed details in images.",
+        "audit_checklist": {
+            "Part_Number": "score/15", "Authenticity": "score/15", "Visual_Fidelity": "score/20",
+            "Outer_Count": "score/20", "Inner_Count": "score/20", 
+            "Label_Integrity": "score/5", "Unmanifested_Items": "score/3", "Label_Clarity": "score/2"
+        },
         "consistency_score": 0,
-        "key_issues": ["Issue 1", "Issue 2"]
+        "key_issues": ["Issue list"]
     }
     """
 
     contents = [prompt]
-    
-    # Nạp file chứng từ vào AI
     for f in doc_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
-        
-    # Nạp file hình ảnh thực tế vào AI
     for f in prod_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
-    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính logic và toán học chặt chẽ nhất
     response = client.models.generate_content(
         model='models/gemini-2.5-flash',
         contents=contents,
         config=types.GenerateContentConfig(temperature=0.0)
     )
 
-    # Làm sạch chuỗi trả về để parse JSON
     return json.loads(response.text.replace('```json', '').replace('```', '').strip())
 
 # ==========================================
 # WEB UI: DASHBOARD STYLE
 # ==========================================
-st.title("📦 APSS - Logistics Audit Dashboard")
+st.title("📦 APSS - Logistics Audit Dashboard (v3.0)")
 st.markdown("---")
 
 col1, col2 = st.columns(2)
 with col1:
-    doc_files = st.file_uploader("Upload Documents (PDF/Img)", type=["pdf", "jpg", "png"], accept_multiple_files=True)
+    doc_files = st.file_uploader("Upload Documents", type=["pdf", "jpg", "png"], accept_multiple_files=True)
 with col2:
     prod_files = st.file_uploader("Upload Product Images", type=["jpg", "png"], accept_multiple_files=True)
 
-if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
+if st.button("🚀 EXECUTE 8-STEP ADVANCED AUDIT", type="primary"):
     if doc_files and prod_files:
-        with st.spinner('AI auditing in progress...'):
+        with st.spinner('AI conducting 8-step inspection...'):
             try:
                 res = perform_audit(doc_files, prod_files)
 
-                # 1. SCORE & SUMMARY
-                st.markdown(f"### Overall Consistency Score: {res['consistency_score']}%")
+                # SCORE
+                st.markdown(f"## Consistency Score: {res['consistency_score']}%")
                 st.progress(res['consistency_score'] / 100)
+
+                # 8-STEP CHECKLIST TABLE
+                st.markdown("### ✅ Detailed Audit Checklist")
+                checklist = res.get('audit_checklist', {})
+                data = [{"Step": k.replace('_', ' '), "Score": v} for k, v in checklist.items()]
+                st.table(data)
+
+                # CONTEXT & ISSUES
+                st.markdown("### 📝 Analysis Details")
                 st.info(res['summary'])
+                
+                st.markdown("### 🔍 Issues")
+                for issue in res.get('key_issues', []):
+                    st.warning(f"⚠️ {issue}")
 
-                # 2. AI CONTEXT ANALYSIS
-                st.markdown("### 📝 AI Context Analysis")
-                colA, colB = st.columns(2)
-                with colA:
-                    st.markdown("**📄 Document Extraction**")
-                    st.write(res.get('doc_description', 'No document description provided.'))
-                with colB:
-                    st.markdown("**📦 Physical Observation**")
-                    st.write(res.get('physical_description', 'No physical description provided.'))
-
-                # 3. VERIFICATION TABLE
-                st.markdown("### 📊 Verification Details")
-                st.table(res['comparison'])
-
-                # 4. KEY ISSUES
-                st.markdown("### 🔍 Key Issues & Discrepancies")
-                if len(res.get('key_issues', [])) > 0:
-                    for issue in res['key_issues']:
-                        st.markdown(f"* ⚠️ {issue}")
-                else:
-                    st.success("✅ No discrepancies found. Physical item matches documentation perfectly!")
-
-                # 5. MANUAL OVERRIDE
                 if res['consistency_score'] < 100:
-                    st.markdown("---")
                     if st.button("Override and Force PASS"):
-                        st.success("✅ Audit result manually overridden by operator.")
+                        st.success("✅ Audit result manually overridden.")
             except Exception as e:
-                st.error(f"Audit Error: {e}")
-    else:
-        st.warning("Please upload both documents and product images to proceed.")
+                st.error(f"Error: {e}")
