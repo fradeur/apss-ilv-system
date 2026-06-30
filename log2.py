@@ -6,6 +6,7 @@ import json
 # ==========================================
 # SYSTEM CONFIGURATION
 # ==========================================
+# Lấy API Key từ hệ thống Secrets của Streamlit
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
@@ -15,10 +16,17 @@ st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 # AI ENGINE: STRUCTURED AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
+    # Prompt yêu cầu AI trả về cấu trúc JSON rõ ràng, cấm đoán mò và có barem chấm điểm
     prompt = """
     Perform an expert logistics audit. 
     CRITICAL RULE: Focus ONLY on validating the Item Identity (Part Number/Description) and Quantity. 
     DO NOT extract, guess, or evaluate Weight or Dimensions under any circumstances.
+    
+    SCORING RUBRIC for 'consistency_score':
+    - 100: Perfect match in both Item Identity and Quantity. No extra undeclared items.
+    - 50 to 99: Partial match (e.g., Item Identity matches, but Quantity is incorrect, or there are extra undeclared items alongside the correct ones).
+    - 1 to 49: Severe discrepancy, but some parts match.
+    - 0: Critical mismatch (completely wrong item, nothing matches the documentation).
     
     Return JSON strictly in this format:
     {
@@ -36,18 +44,22 @@ def perform_audit(doc_files, prod_files):
 
     contents = [prompt]
     
+    # Nạp file chứng từ vào AI
     for f in doc_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
         
+    # Nạp file hình ảnh thực tế vào AI
     for f in prod_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
+    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính chính xác
     response = client.models.generate_content(
         model='models/gemini-2.5-flash',
         contents=contents,
         config=types.GenerateContentConfig(temperature=0.0)
     )
 
+    # Làm sạch chuỗi trả về để parse JSON
     return json.loads(response.text.replace('```json', '').replace('```', '').strip())
 
 # ==========================================
@@ -73,7 +85,7 @@ if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
                 st.progress(res['consistency_score'] / 100)
                 st.info(res['summary'])
 
-                # 2. AI CONTEXT ANALYSIS (Phần mô tả mới thêm)
+                # 2. AI CONTEXT ANALYSIS (Phần mô tả Context)
                 st.markdown("### 📝 AI Context Analysis")
                 colA, colB = st.columns(2)
                 with colA:
@@ -83,11 +95,11 @@ if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
                     st.markdown("**📦 Physical Observation**")
                     st.write(res.get('physical_description', 'No physical description provided.'))
 
-                # 3. VERIFICATION TABLE
+                # 3. VERIFICATION TABLE (Chỉ hiển thị Identity và Quantity)
                 st.markdown("### 📊 Verification Details")
                 st.table(res['comparison'])
 
-                # 4. KEY ISSUES (Đã fix lỗi trống trơn khi hàng chuẩn 100%)
+                # 4. KEY ISSUES
                 st.markdown("### 🔍 Key Issues & Discrepancies")
                 if len(res.get('key_issues', [])) > 0:
                     for issue in res['key_issues']:
