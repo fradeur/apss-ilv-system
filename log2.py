@@ -6,7 +6,8 @@ import json
 # ==========================================
 # SYSTEM CONFIGURATION
 # ==========================================
-client = genai.Client(api_key="GEMINI_API_KEY")
+api_key = st.secrets["GEMINI_API_KEY"]
+client = genai.Client(api_key=api_key)
 st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 
 
