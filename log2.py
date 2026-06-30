@@ -87,18 +87,11 @@ with tab1:
 
     if st.button("🚀 EXECUTE FULL AUDIT", type="primary"):
         if doc_files and prod_files:
-            with st.status("📦 Initiating Audit Process...", expanded=True) as status:
+            with st.spinner('AI auditing in progress...'):
                 try:
-                    status.write("🔍 Extracting document data..."); st.progress(25)
-                    status.write("🖼️ Analyzing physical inspection..."); st.progress(50)
-                    status.write("🧠 Running 8-step verification logic..."); st.progress(75)
-                    
                     res = perform_audit(doc_files, prod_files)
                     save_log(res, doc_files, prod_files)
                     
-                    status.write("✅ Audit complete!"); st.progress(100)
-                    status.update(label="Audit Successful", state="complete")
-
                     st.markdown(f"## Consistency Score: {res['consistency_score']}%")
                     st.progress(res['consistency_score'] / 100)
                     st.info(res['summary'])
@@ -122,7 +115,6 @@ with tab1:
                     for issue in res.get('key_issues', []):
                         st.warning(f"⚠️ {issue}")
                 except Exception as e:
-                    status.update(label="Audit Failed", state="error")
                     st.error(f"Audit Error: {e}")
         else:
             st.warning("Please upload both documents and images.")
