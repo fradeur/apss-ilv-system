@@ -16,18 +16,18 @@ st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 # AI ENGINE: STRUCTURED AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
-    # Prompt sử dụng Penalty System để chấm điểm linh hoạt (0 - 100)
+    # Prompt áp dụng Cơ chế Trọng số (40-40-20) với Độ mịn cao (High Granularity)
     prompt = """
     Perform an expert logistics audit. 
     CRITICAL RULE: Focus ONLY on validating the Item Identity (Part Number/Description) and Quantity. 
     DO NOT extract, guess, or evaluate Weight or Dimensions under any circumstances.
     
-    CONTINUOUS SCORING GUIDELINES (Calculate a precise score from 0 to 100):
-    - Start with a baseline score of 100.
-    - Deduct 1 to 10 points for minor discrepancies (e.g., slight differences in description wording but the part number matches).
-    - Deduct 15 to 30 points for the presence of undeclared extra components (depending on the volume of extra items).
-    - Deduct 40 to 70 points for quantity mismatches (scale the deduction proportionally to how large the mismatch is).
-    - Set the score strictly to 0 ONLY if the primary part number/item is completely wrong or missing.
+    WEIGHTED SCORING SYSTEM (Total: 100 points - Calculate with high granularity, allowing exact odd/decimal-like integer scores such as 27, 34, 42, etc.):
+    1. Item Identity (Max 40 pts): Award 40 pts for a perfect match. Deduct partial points if the name is slightly off but part number is correct. Award 0 only if completely wrong.
+    2. Quantity (Max 40 pts): Award 40 pts for a perfect match. Calculate a precise mathematical penalty based on the deviation ratio (e.g., if actual is 5x the declared, do not just give 0, calculate a granular partial score reflecting the severe ratio).
+    3. Extras & Labeling (Max 20 pts): Award 20 pts for perfect status. Deduct exact points dynamically depending on the severity and number of misleading labels found.
+    
+    CRITICAL: Do not round the final score to the nearest 5 or 10. Compute a precise, custom integer score based on the exact evaluation.
     
     Return JSON strictly in this format:
     {
@@ -53,7 +53,7 @@ def perform_audit(doc_files, prod_files):
     for f in prod_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
-    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính nhất quán cao nhất
+    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính logic và toán học chặt chẽ nhất
     response = client.models.generate_content(
         model='models/gemini-2.5-flash',
         contents=contents,
