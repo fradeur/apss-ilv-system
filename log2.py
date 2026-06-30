@@ -38,11 +38,14 @@ def save_log(res, doc_files, prod_files):
 def perform_audit(doc_files, prod_files):
     prompt = """
     Perform an expert industrial logistics audit. 
-    Return JSON strictly in this format:
+    STRICT RULES:
+    1. Focus ONLY on 'Item Identity' and 'Quantity'. 
+    2. ABSOLUTELY IGNORE all data related to Weight, Dimensions, Shipping Dates, or Consignee.
+    3. Return JSON strictly in this format:
     {
-        "summary": "Professional summary of the shipment audit.",
-        "doc_description": "Declared details in documents.",
-        "physical_description": "Observed details in images.",
+        "summary": "Professional summary of the audit.",
+        "doc_description": "Declared items and quantities.",
+        "physical_description": "Observed items and quantities.",
         "comparison": [
             {"Aspect": "Item Identity", "Doc": "...", "Physical": "..."}, 
             {"Aspect": "Quantity", "Doc": "...", "Physical": "..."}
@@ -76,28 +79,35 @@ tab1, tab2 = st.tabs(["🚀 New Audit", "📜 Audit History"])
 
 with tab1:
     st.title("📦 APSS - Advanced Logistics Audit")
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         doc_files = st.file_uploader("Upload Documents", type=["pdf", "jpg", "png"], accept_multiple_files=True)
-    with col2:
+    with c2:
         prod_files = st.file_uploader("Upload Product Images", type=["jpg", "png"], accept_multiple_files=True)
 
     if st.button("🚀 EXECUTE FULL AUDIT", type="primary"):
         if doc_files and prod_files:
-            with st.spinner('AI conducting 8-step inspection...'):
+            with st.status("📦 Initiating Audit Process...", expanded=True) as status:
                 try:
+                    status.write("🔍 Extracting document data..."); st.progress(25)
+                    status.write("🖼️ Analyzing physical inspection..."); st.progress(50)
+                    status.write("🧠 Running 8-step verification logic..."); st.progress(75)
+                    
                     res = perform_audit(doc_files, prod_files)
-                    save_log(res, doc_files, prod_files) # Tự động log
+                    save_log(res, doc_files, prod_files)
+                    
+                    status.write("✅ Audit complete!"); st.progress(100)
+                    status.update(label="Audit Successful", state="complete")
 
                     st.markdown(f"## Consistency Score: {res['consistency_score']}%")
                     st.progress(res['consistency_score'] / 100)
                     st.info(res['summary'])
 
-                    c1, c2 = st.columns(2)
-                    with c1:
+                    colA, colB = st.columns(2)
+                    with colA:
                         st.markdown("**📄 Document Extraction**")
                         st.write(res.get('doc_description', 'N/A'))
-                    with c2:
+                    with colB:
                         st.markdown("**📦 Physical Observation**")
                         st.write(res.get('physical_description', 'N/A'))
 
@@ -112,9 +122,10 @@ with tab1:
                     for issue in res.get('key_issues', []):
                         st.warning(f"⚠️ {issue}")
                 except Exception as e:
+                    status.update(label="Audit Failed", state="error")
                     st.error(f"Audit Error: {e}")
         else:
-            st.warning("Please upload both documents and product images.")
+            st.warning("Please upload both documents and images.")
 
 with tab2:
     st.markdown("### 📜 Audit History")
