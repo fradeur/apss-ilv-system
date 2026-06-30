@@ -6,7 +6,6 @@ import json
 # ==========================================
 # SYSTEM CONFIGURATION
 # ==========================================
-# Lấy API Key từ hệ thống Secrets của Streamlit
 api_key = st.secrets["GEMINI_API_KEY"]
 client = genai.Client(api_key=api_key)
 
@@ -16,7 +15,6 @@ st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 # AI ENGINE: STRUCTURED AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
-    # Prompt yêu cầu AI trả về cấu trúc rõ ràng, CHỈ tập trung vào mặt hàng và số lượng
     prompt = """
     Perform an expert logistics audit. 
     CRITICAL RULE: Focus ONLY on validating the Item Identity (Part Number/Description) and Quantity. 
@@ -24,34 +22,32 @@ def perform_audit(doc_files, prod_files):
     
     Return JSON strictly in this format:
     {
-        "summary": "One sentence summary of the shipment.",
+        "summary": "One sentence overall summary of the audit result.",
+        "doc_description": "A brief summary of what the documents declare (Item and Quantity).",
+        "physical_description": "A brief summary of what is visible in the physical product images (Item and Quantity).",
         "comparison": [
             {"Aspect": "Item Identity", "Doc": "...", "Physical": "..."}, 
             {"Aspect": "Quantity", "Doc": "...", "Physical": "..."}
         ],
         "consistency_score": 0,
-        "key_issues": ["Issue 1", "Issue 2", "Issue 3"]
+        "key_issues": ["Issue 1", "Issue 2"]
     }
     """
 
     contents = [prompt]
     
-    # Nạp file chứng từ vào AI
     for f in doc_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
         
-    # Nạp file hình ảnh thực tế vào AI
     for f in prod_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
 
-    # Gọi model xử lý với temperature = 0.0 để đảm bảo tính chính xác, không sáng tạo
     response = client.models.generate_content(
         model='models/gemini-2.5-flash',
         contents=contents,
         config=types.GenerateContentConfig(temperature=0.0)
     )
 
-    # Làm sạch chuỗi trả về để parse JSON
     return json.loads(response.text.replace('```json', '').replace('```', '').strip())
 
 # ==========================================
@@ -77,16 +73,29 @@ if st.button("🚀 EXECUTE ADVANCED AUDIT", type="primary"):
                 st.progress(res['consistency_score'] / 100)
                 st.info(res['summary'])
 
-                # 2. VERIFICATION TABLE (Chỉ hiển thị Identity và Quantity)
+                # 2. AI CONTEXT ANALYSIS (Phần mô tả mới thêm)
+                st.markdown("### 📝 AI Context Analysis")
+                colA, colB = st.columns(2)
+                with colA:
+                    st.markdown("**📄 Document Extraction**")
+                    st.write(res.get('doc_description', 'No document description provided.'))
+                with colB:
+                    st.markdown("**📦 Physical Observation**")
+                    st.write(res.get('physical_description', 'No physical description provided.'))
+
+                # 3. VERIFICATION TABLE
                 st.markdown("### 📊 Verification Details")
                 st.table(res['comparison'])
 
-                # 3. KEY ISSUES
+                # 4. KEY ISSUES (Đã fix lỗi trống trơn khi hàng chuẩn 100%)
                 st.markdown("### 🔍 Key Issues & Discrepancies")
-                for issue in res['key_issues']:
-                    st.markdown(f"* ⚠️ {issue}")
+                if len(res.get('key_issues', [])) > 0:
+                    for issue in res['key_issues']:
+                        st.markdown(f"* ⚠️ {issue}")
+                else:
+                    st.success("✅ No discrepancies found. Physical item matches documentation perfectly!")
 
-                # 4. MANUAL OVERRIDE
+                # 5. MANUAL OVERRIDE
                 if res['consistency_score'] < 100:
                     st.markdown("---")
                     if st.button("Override and Force PASS"):
