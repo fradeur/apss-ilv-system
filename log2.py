@@ -2,6 +2,9 @@ import streamlit as st
 from google import genai
 from google.genai import types
 import json
+import pandas as pd
+from datetime import datetime
+import os
 
 # ==========================================
 # SYSTEM CONFIGURATION
@@ -12,6 +15,24 @@ client = genai.Client(api_key=api_key)
 st.set_page_config(page_title="APSS - Advanced Audit", layout="wide")
 
 # ==========================================
+# LOGGING SYSTEM
+# ==========================================
+def save_log(res, doc_files, prod_files):
+    log_entry = {
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Score": res['consistency_score'],
+        "Summary": res['summary'],
+        "Docs": ", ".join([f.name for f in doc_files]),
+        "Issues": "; ".join(res.get('key_issues', []))
+    }
+    df = pd.DataFrame([log_entry])
+    file_path = "audit_log.csv"
+    if not os.path.exists(file_path):
+        df.to_csv(file_path, index=False)
+    else:
+        df.to_csv(file_path, mode='a', header=False, index=False)
+
+# ==========================================
 # AI ENGINE: 8-STEP STRICTOR AUDIT
 # ==========================================
 def perform_audit(doc_files, prod_files):
@@ -19,9 +40,9 @@ def perform_audit(doc_files, prod_files):
     Perform an expert industrial logistics audit. 
     Return JSON strictly in this format:
     {
-        "summary": "One sentence overall summary of the audit result.",
-        "doc_description": "Summary of declared items and quantities in documents.",
-        "physical_description": "Summary of observed items and quantities in images.",
+        "summary": "Professional summary of the shipment audit.",
+        "doc_description": "Declared details in documents.",
+        "physical_description": "Observed details in images.",
         "comparison": [
             {"Aspect": "Item Identity", "Doc": "...", "Physical": "..."}, 
             {"Aspect": "Quantity", "Doc": "...", "Physical": "..."}
@@ -34,13 +55,7 @@ def perform_audit(doc_files, prod_files):
         "consistency_score": 0,
         "key_issues": ["Issue list"]
     }
-    
-    SCORING LOGIC:
-    - Item Identity (50 pts): Split into Part Number (15), Authenticity (15), Visual Fidelity (20). KNOCK-OUT: Wrong Part Number = 0% total.
-    - Quantity (40 pts): Outer Count (20), Inner Count (20). Exponential penalty for deviations.
-    - Labeling (10 pts): Integrity (5), Unmanifested (3), Clarity (2).
     """
-
     contents = [prompt]
     for f in doc_files:
         contents.append(types.Part.from_bytes(data=f.read(), mime_type=f.type))
@@ -52,62 +67,60 @@ def perform_audit(doc_files, prod_files):
         contents=contents,
         config=types.GenerateContentConfig(temperature=0.0)
     )
-
     return json.loads(response.text.replace('```json', '').replace('```', '').strip())
 
 # ==========================================
-# WEB UI: DASHBOARD STYLE
+# WEB UI: DASHBOARD
 # ==========================================
-st.title("📦 APSS - Advanced Logistics Audit Dashboard")
-st.markdown("---")
+tab1, tab2 = st.tabs(["🚀 New Audit", "📜 Audit History"])
 
-col1, col2 = st.columns(2)
-with col1:
-    doc_files = st.file_uploader("Upload Documents (PDF/Img)", type=["pdf", "jpg", "png"], accept_multiple_files=True)
-with col2:
-    prod_files = st.file_uploader("Upload Product Images", type=["jpg", "png"], accept_multiple_files=True)
+with tab1:
+    st.title("📦 APSS - Advanced Logistics Audit")
+    col1, col2 = st.columns(2)
+    with col1:
+        doc_files = st.file_uploader("Upload Documents", type=["pdf", "jpg", "png"], accept_multiple_files=True)
+    with col2:
+        prod_files = st.file_uploader("Upload Product Images", type=["jpg", "png"], accept_multiple_files=True)
 
-if st.button("🚀 EXECUTE FULL AUDIT", type="primary"):
-    if doc_files and prod_files:
-        with st.spinner('AI conducting 8-step inspection...'):
-            try:
-                res = perform_audit(doc_files, prod_files)
+    if st.button("🚀 EXECUTE FULL AUDIT", type="primary"):
+        if doc_files and prod_files:
+            with st.spinner('AI conducting 8-step inspection...'):
+                try:
+                    res = perform_audit(doc_files, prod_files)
+                    save_log(res, doc_files, prod_files) # Tự động log
 
-                # 1. SCORE & SUMMARY
-                st.markdown(f"## Consistency Score: {res['consistency_score']}%")
-                st.progress(res['consistency_score'] / 100)
-                st.info(res['summary'])
+                    st.markdown(f"## Consistency Score: {res['consistency_score']}%")
+                    st.progress(res['consistency_score'] / 100)
+                    st.info(res['summary'])
 
-                # 2. AI CONTEXT ANALYSIS
-                st.markdown("### 📝 AI Context Analysis")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**📄 Document Extraction**")
-                    st.write(res.get('doc_description', 'N/A'))
-                with c2:
-                    st.markdown("**📦 Physical Observation**")
-                    st.write(res.get('physical_description', 'N/A'))
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**📄 Document Extraction**")
+                        st.write(res.get('doc_description', 'N/A'))
+                    with c2:
+                        st.markdown("**📦 Physical Observation**")
+                        st.write(res.get('physical_description', 'N/A'))
 
-                # 3. VERIFICATION TABLE
-                st.markdown("### 📊 Verification Details")
-                st.table(res['comparison'])
+                    st.markdown("### 📊 Verification Details")
+                    st.table(res['comparison'])
 
-                # 4. AUDIT CHECKLIST
-                st.markdown("### ✅ Detailed Audit Checklist")
-                checklist = res.get('audit_checklist', {})
-                data = [{"Step": k.replace('_', ' '), "Score": v} for k, v in checklist.items()]
-                st.table(data)
+                    st.markdown("### ✅ Detailed Audit Checklist")
+                    checklist = res.get('audit_checklist', {})
+                    st.table([{"Step": k.replace('_', ' '), "Score": v} for k, v in checklist.items()])
 
-                # 5. KEY ISSUES
-                st.markdown("### 🔍 Key Issues & Discrepancies")
-                for issue in res.get('key_issues', []):
-                    st.warning(f"⚠️ {issue}")
+                    st.markdown("### 🔍 Key Issues")
+                    for issue in res.get('key_issues', []):
+                        st.warning(f"⚠️ {issue}")
+                except Exception as e:
+                    st.error(f"Audit Error: {e}")
+        else:
+            st.warning("Please upload both documents and product images.")
 
-                if res['consistency_score'] < 100:
-                    st.markdown("---")
-                    if st.button("Override and Force PASS"):
-                        st.success("✅ Audit result manually overridden.")
-            except Exception as e:
-                st.error(f"Audit Error: {e}")
+with tab2:
+    st.markdown("### 📜 Audit History")
+    if os.path.exists("audit_log.csv"):
+        log_df = pd.read_csv("audit_log.csv")
+        st.dataframe(log_df.sort_values(by="Timestamp", ascending=False))
+        st.download_button("📥 Download Log (CSV)", data=log_df.to_csv(index=False), file_name="audit_report.csv")
     else:
-        st.warning("Please upload both documents and product images to proceed.")
+        st.info("No audit logs found yet.")
